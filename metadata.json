@@ -1,0 +1,6 @@
+{
+  "name": "Gathoni Park Farm Utility & Service Charge System",
+  "description": "Comprehensive utility tracking and service charge management platform for Gathoni Park Farm, handling water and electricity meters, automated consumption calculations, photo verification, and Excel reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

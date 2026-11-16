@@ -421,6 +421,12 @@ export const GoogleSheetsSettings: React.FC<GoogleSheetsSettingsProps> = ({
             <p className="text-xs text-slate-600 dark:text-slate-400 mt-3 leading-relaxed">
               Connect your authorized Google account. This connection is <strong className="text-slate-800 dark:text-slate-200 font-semibold">permanently linked</strong> across page refreshes and browser sessions until you explicitly click Disconnect.
             </p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2">
+              If Google reports <code>origin_mismatch</code>, add this origin under Authorized JavaScript origins for the app&apos;s Web OAuth client in Google Cloud Console:
+            </p>
+            <code className="mt-1 block break-all rounded bg-slate-50 dark:bg-slate-800 px-2 py-1.5 font-mono text-[11px] text-slate-700 dark:text-slate-300">
+              {window.location.origin}
+            </code>
 
             {currentUser ? (
               <div className="mt-4 p-4 rounded-xl bg-gradient-to-br from-emerald-50/70 to-slate-50 dark:from-emerald-950/30 dark:to-slate-800/60 border border-emerald-200/80 dark:border-emerald-800/80 space-y-3">

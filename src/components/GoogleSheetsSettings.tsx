@@ -340,6 +340,9 @@ export const GoogleSheetsSettings: React.FC<GoogleSheetsSettingsProps> = ({
     dailyWater.length +
     postpaidPower.length +
     prepaidTokens.length;
+  const isGoogleOriginMismatch = /origin[_ -]mismatch|unauthorized.?domain/i.test(
+    loginError || ''
+  );
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-12">
@@ -475,27 +478,40 @@ export const GoogleSheetsSettings: React.FC<GoogleSheetsSettingsProps> = ({
                     <div className="flex items-start gap-1.5 font-medium">
                       <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
                       <div>
-                        <div className="font-bold">Sign-In Window Interrupted</div>
+                        <div className="font-bold">
+                          {isGoogleOriginMismatch
+                            ? 'Google OAuth origin is not authorized'
+                            : 'Sign-in could not be completed'}
+                        </div>
                         <div className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5 leading-relaxed">
-                          Your browser's popup blocker or iframe cookie settings closed the sign-in window. To resolve this:
+                          {isGoogleOriginMismatch
+                            ? 'This is a Google Cloud OAuth client configuration issue, not a popup setting. In Google Cloud Console, open APIs & Services → Credentials, edit the Web application OAuth client used by this app, and add this exact origin to Authorized JavaScript origins:'
+                            : "Your browser's popup blocker or iframe cookie settings may have closed the sign-in window. To resolve this:"}
+                        </div>
+                        {isGoogleOriginMismatch && (
+                          <code className="mt-2 block break-all rounded bg-amber-100 dark:bg-amber-900/50 px-2 py-1.5 font-mono text-[11px] text-amber-950 dark:text-amber-100">
+                            {window.location.origin}
+                          </code>
+                        )}
+                      </div>
+                    </div>
+
+                    {!isGoogleOriginMismatch && (
+                      <div className="pt-1 flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => window.open(window.location.href, '_blank')}
+                          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition-colors"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Open App in Full Browser Tab to Sign In</span>
+                        </button>
+
+                        <div className="text-[11px] text-slate-500 text-center">
+                          — or allow popups in your browser address bar —
                         </div>
                       </div>
-                    </div>
-
-                    <div className="pt-1 flex flex-col gap-2">
-                      <button
-                        type="button"
-                        onClick={() => window.open(window.location.href, '_blank')}
-                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition-colors"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Open App in Full Browser Tab to Sign In</span>
-                      </button>
-
-                      <div className="text-[11px] text-slate-500 text-center">
-                        — or allow popups in your browser address bar —
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )}
 

@@ -194,8 +194,10 @@ export function findLastReadingForMeter(
 const TTA_SYNC_FLAG = 'gpf_tta_sync_2026_11_12';
 const BROWNS_SYNC_FLAG = 'gpf_browns_sync_2026_11_16';
 const NAIPOSHA_KANJO_SYNC_FLAG = 'gpf_naiposha_kanjo_sync_2026_11_16';
+const NAIPOSHA_INTERNAL_SYNC_FLAG = 'gpf_naiposha_internal_sync_2026_11_16';
 const TEA_PODS_SYNC_FLAG = 'gpf_tea_pods_sync_2026_11_16';
 const PAMOJA_SYNC_FLAG = 'gpf_pamoja_sync_2026_11_16';
+const ET_NAIPOSHA_SYNC_FLAG = 'gpf_et_naiposha_sync_2026_08_20';
 
 // Initialize seed data (loads Browns Water Meter + TTA Daily Water + WRA Daily Water, clean for others)
 export async function initializeStorage(forceReset = false): Promise<void> {
@@ -206,8 +208,10 @@ export async function initializeStorage(forceReset = false): Promise<void> {
     localStorage.setItem(TTA_SYNC_FLAG, 'true');
     localStorage.setItem(BROWNS_SYNC_FLAG, 'true');
     localStorage.setItem(NAIPOSHA_KANJO_SYNC_FLAG, 'true');
+    localStorage.setItem(NAIPOSHA_INTERNAL_SYNC_FLAG, 'true');
     localStorage.setItem(TEA_PODS_SYNC_FLAG, 'true');
     localStorage.setItem(PAMOJA_SYNC_FLAG, 'true');
+    localStorage.setItem(ET_NAIPOSHA_SYNC_FLAG, 'true');
     return;
   }
 
@@ -290,6 +294,33 @@ export async function initializeStorage(forceReset = false): Promise<void> {
     localStorage.setItem(NAIPOSHA_KANJO_SYNC_FLAG, 'true');
   }
 
+  // Non-destructive Naiposha Kanjo Internal Meter update (2 Mar 2026 - 16 Nov 2026)
+  if (!localStorage.getItem(NAIPOSHA_INTERNAL_SYNC_FLAG)) {
+    const internalSeedRecords = INITIAL_WATER_WEEKLY.filter(
+      (item) => item.meterId === 'w-naiposha-internal'
+    );
+    const internalSeedDates = new Set(
+      internalSeedRecords.map((item) => item.date)
+    );
+    const existingWeekly = await getAllFromStore<WaterWeeklyReading>(
+      STORES.WATER_WEEKLY
+    );
+
+    for (const row of existingWeekly) {
+      if (
+        row.meterId === 'w-naiposha-internal' &&
+        (internalSeedDates.has(row.date) || row.id.startsWith('ni-'))
+      ) {
+        await deleteFromStore(STORES.WATER_WEEKLY, row.id);
+      }
+    }
+
+    for (const item of internalSeedRecords) {
+      await putInStore(STORES.WATER_WEEKLY, item);
+    }
+    localStorage.setItem(NAIPOSHA_INTERNAL_SYNC_FLAG, 'true');
+  }
+
   // Non-destructive Tea Pods Meter update (26 Jan 2026 - 16 Nov 2026)
   if (!localStorage.getItem(TEA_PODS_SYNC_FLAG)) {
     const teaPodsSeedRecords = INITIAL_WATER_WEEKLY.filter(
@@ -344,6 +375,27 @@ export async function initializeStorage(forceReset = false): Promise<void> {
       await putInStore(STORES.WATER_WEEKLY, item);
     }
     localStorage.setItem(PAMOJA_SYNC_FLAG, 'true');
+  }
+
+  // Non-destructive NAIPOSHA (#25700588632) prepaid electricity token update (Jan - Aug 2026)
+  if (!localStorage.getItem(ET_NAIPOSHA_SYNC_FLAG)) {
+    const etNaiposhaSeedRecords = INITIAL_ELECTRICITY_PREPAID.filter(
+      (item) => item.meterId === 'et-naiposha'
+    );
+    const existingPrepaid = await getAllFromStore<ElectricityPrepaidToken>(
+      STORES.ELECTRICITY_PREPAID
+    );
+
+    for (const row of existingPrepaid) {
+      if (row.meterId === 'et-naiposha') {
+        await deleteFromStore(STORES.ELECTRICITY_PREPAID, row.id);
+      }
+    }
+
+    for (const item of etNaiposhaSeedRecords) {
+      await putInStore(STORES.ELECTRICITY_PREPAID, item);
+    }
+    localStorage.setItem(ET_NAIPOSHA_SYNC_FLAG, 'true');
   }
 
   const currentWeekly = await getAllFromStore<WaterWeeklyReading>(

@@ -191,13 +191,159 @@ export function findLastReadingForMeter(
   return null;
 }
 
+const TTA_SYNC_FLAG = 'gpf_tta_sync_2026_11_12';
+const BROWNS_SYNC_FLAG = 'gpf_browns_sync_2026_11_16';
+const NAIPOSHA_KANJO_SYNC_FLAG = 'gpf_naiposha_kanjo_sync_2026_11_16';
+const TEA_PODS_SYNC_FLAG = 'gpf_tea_pods_sync_2026_11_16';
+const PAMOJA_SYNC_FLAG = 'gpf_pamoja_sync_2026_11_16';
+
 // Initialize seed data (loads Browns Water Meter + TTA Daily Water + WRA Daily Water, clean for others)
 export async function initializeStorage(forceReset = false): Promise<void> {
   const isV4Initialized = localStorage.getItem('gpf_v4_initialized');
   if (!isV4Initialized || forceReset) {
     await resetToDefaultSeedData();
     localStorage.setItem('gpf_v4_initialized', 'true');
+    localStorage.setItem(TTA_SYNC_FLAG, 'true');
+    localStorage.setItem(BROWNS_SYNC_FLAG, 'true');
+    localStorage.setItem(NAIPOSHA_KANJO_SYNC_FLAG, 'true');
+    localStorage.setItem(TEA_PODS_SYNC_FLAG, 'true');
+    localStorage.setItem(PAMOJA_SYNC_FLAG, 'true');
     return;
+  }
+
+  // Non-destructive TTA Water Meter update (05/10/2026 - 12/11/2026)
+  if (!localStorage.getItem(TTA_SYNC_FLAG)) {
+    const ttaSeedRecords = INITIAL_WATER_DAILY.filter(
+      (item) => item.meterId === 'wd-tta'
+    );
+    const ttaSeedDates = new Set(ttaSeedRecords.map((item) => item.date));
+    const existingDaily = await getAllFromStore<WaterDailyReading>(
+      STORES.WATER_DAILY
+    );
+
+    // Remove any conflicting wd-tta entries on covered dates to prevent duplicates
+    for (const row of existingDaily) {
+      if (
+        row.meterId === 'wd-tta' &&
+        (ttaSeedDates.has(row.date) || row.id.startsWith('tta-'))
+      ) {
+        await deleteFromStore(STORES.WATER_DAILY, row.id);
+      }
+    }
+
+    // Write the updated TTA records
+    for (const item of ttaSeedRecords) {
+      await putInStore(STORES.WATER_DAILY, item);
+    }
+    localStorage.setItem(TTA_SYNC_FLAG, 'true');
+  }
+
+  // Non-destructive Browns Water Meter update (5 Jan 2026 - 16 Nov 2026)
+  if (!localStorage.getItem(BROWNS_SYNC_FLAG)) {
+    const brownsSeedRecords = INITIAL_WATER_WEEKLY.filter(
+      (item) => item.meterId === 'w-browns'
+    );
+    const brownsSeedDates = new Set(brownsSeedRecords.map((item) => item.date));
+    const existingWeekly = await getAllFromStore<WaterWeeklyReading>(
+      STORES.WATER_WEEKLY
+    );
+
+    for (const row of existingWeekly) {
+      if (
+        row.meterId === 'w-browns' &&
+        (brownsSeedDates.has(row.date) || row.id.startsWith('bw-'))
+      ) {
+        await deleteFromStore(STORES.WATER_WEEKLY, row.id);
+      }
+    }
+
+    for (const item of brownsSeedRecords) {
+      await putInStore(STORES.WATER_WEEKLY, item);
+    }
+    localStorage.setItem(BROWNS_SYNC_FLAG, 'true');
+  }
+
+  // Non-destructive Naiposha Kanjo Meter update (26 Jan 2026 - 16 Nov 2026)
+  if (!localStorage.getItem(NAIPOSHA_KANJO_SYNC_FLAG)) {
+    const kanjoSeedRecords = INITIAL_WATER_WEEKLY.filter(
+      (item) => item.meterId === 'w-naiposha-kanjo'
+    );
+    const kanjoSeedDates = new Set(kanjoSeedRecords.map((item) => item.date));
+    const existingWeekly = await getAllFromStore<WaterWeeklyReading>(
+      STORES.WATER_WEEKLY
+    );
+
+    for (const row of existingWeekly) {
+      if (
+        row.meterId === 'w-naiposha' ||
+        row.id.startsWith('np-') ||
+        (row.meterId === 'w-naiposha-kanjo' &&
+          (kanjoSeedDates.has(row.date) || row.id.startsWith('nk-')))
+      ) {
+        await deleteFromStore(STORES.WATER_WEEKLY, row.id);
+      }
+    }
+
+    for (const item of kanjoSeedRecords) {
+      await putInStore(STORES.WATER_WEEKLY, item);
+    }
+    localStorage.setItem(NAIPOSHA_KANJO_SYNC_FLAG, 'true');
+  }
+
+  // Non-destructive Tea Pods Meter update (26 Jan 2026 - 16 Nov 2026)
+  if (!localStorage.getItem(TEA_PODS_SYNC_FLAG)) {
+    const teaPodsSeedRecords = INITIAL_WATER_WEEKLY.filter(
+      (item) => item.meterId === 'w-tea-pods'
+    );
+    const teaPodsSeedDates = new Set(
+      teaPodsSeedRecords.map((item) => item.date)
+    );
+    const existingWeekly = await getAllFromStore<WaterWeeklyReading>(
+      STORES.WATER_WEEKLY
+    );
+
+    for (const row of existingWeekly) {
+      if (
+        row.meterId === 'w-teapods' ||
+        row.id.startsWith('tp-') ||
+        (row.meterId === 'w-tea-pods' &&
+          (teaPodsSeedDates.has(row.date) || row.id.startsWith('tp-')))
+      ) {
+        await deleteFromStore(STORES.WATER_WEEKLY, row.id);
+      }
+    }
+
+    for (const item of teaPodsSeedRecords) {
+      await putInStore(STORES.WATER_WEEKLY, item);
+    }
+    localStorage.setItem(TEA_PODS_SYNC_FLAG, 'true');
+  }
+
+  // Non-destructive Project Pamoja Water Meter update (26 Jan 2026 - 16 Nov 2026)
+  if (!localStorage.getItem(PAMOJA_SYNC_FLAG)) {
+    const pamojaSeedRecords = INITIAL_WATER_WEEKLY.filter(
+      (item) => item.meterId === 'w-project-pamoja'
+    );
+    const pamojaSeedDates = new Set(
+      pamojaSeedRecords.map((item) => item.date)
+    );
+    const existingWeekly = await getAllFromStore<WaterWeeklyReading>(
+      STORES.WATER_WEEKLY
+    );
+
+    for (const row of existingWeekly) {
+      if (
+        row.meterId === 'w-project-pamoja' &&
+        (pamojaSeedDates.has(row.date) || row.id.startsWith('pj-'))
+      ) {
+        await deleteFromStore(STORES.WATER_WEEKLY, row.id);
+      }
+    }
+
+    for (const item of pamojaSeedRecords) {
+      await putInStore(STORES.WATER_WEEKLY, item);
+    }
+    localStorage.setItem(PAMOJA_SYNC_FLAG, 'true');
   }
 
   const currentWeekly = await getAllFromStore<WaterWeeklyReading>(

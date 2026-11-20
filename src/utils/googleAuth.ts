@@ -42,6 +42,13 @@ export const SPREADSHEET_SCOPES = [
 
 const provider = new GoogleAuthProvider();
 SPREADSHEET_SCOPES.forEach((scope) => provider.addScope(scope));
+provider.setCustomParameters({ prompt: 'select_account' });
+
+export const OAUTH_CONFIG_INFO = {
+  projectId: firebaseConfig.projectId,
+  authDomain: firebaseConfig.authDomain,
+  clientId: firebaseConfig.oAuthClientId,
+};
 
 // Persistent Session Storage Keys
 const SESSION_KEYS = {
@@ -109,7 +116,7 @@ const initialSession = getSavedSession();
 let cachedAccessToken: string | null = initialSession.token;
 let cachedAppUser: AppUser | null = initialSession.user;
 let tokenClientInstance: any = null;
-let isGISReady = false;
+let isSigningIn = false;
 
 let authStateListeners: Array<
   (user: AppUser | null, token: string | null) => void
@@ -198,7 +205,6 @@ export function initGISTokenClient(
             }
           },
         });
-        isGISReady = true;
       } catch (err) {
         console.error('Failed to initialize GIS token client:', err);
       }
@@ -218,7 +224,10 @@ if (typeof window !== 'undefined') {
 /**
  * Fetch Google User Profile using standard OAuth userinfo endpoint
  */
-export async function fetchGoogleUserProfile(token: string): Promise<AppUser> {
+export async function fetchGoogleUserProfile(
+  token: string,
+  throwOnFailure = false
+): Promise<AppUser> {
   try {
     const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { Authorization: `Bearer ${token}` },
@@ -232,14 +241,18 @@ export async function fetchGoogleUserProfile(token: string): Promise<AppUser> {
         photoURL: data.picture || null,
       };
     }
-  } catch (e) {
+    if (throwOnFailure) {
+      throw new Error(`Token rejected by Google (${res.status})`);
+    }
+  } catch (e: any) {
+    if (throwOnFailure) throw e;
     console.warn('Failed to fetch userinfo from Google API:', e);
   }
 
   return {
     uid: `google-${Date.now()}`,
-    email: 'utilityandservicechargecoordin@gmail.com',
-    displayName: 'GPF Utility Coordinator',
+    email: null,
+    displayName: 'Google Workspace User',
     photoURL: null,
   };
 }
@@ -267,6 +280,7 @@ export const initAuth = (
 
   // Hook into Firebase Auth for sessions that used Firebase
   const fbUnsub = onAuthStateChanged(auth, async (fbUser) => {
+    if (isSigningIn) return;
     if (fbUser && cachedAccessToken) {
       const appUser: AppUser = {
         uid: fbUser.uid,
@@ -284,40 +298,36 @@ export const initAuth = (
   };
 };
 
+export interface AuthTriggerError extends Error {
+  code?: string;
+}
+
+function createAuthError(message: string, code?: string): AuthTriggerError {
+  const err = new Error(message) as AuthTriggerError;
+  err.code = code;
+  return err;
+}
+
 /**
- * Synchronous Google Sign-In Trigger
- * Called directly in the user click event handler without any async delays.
- * This guarantees that browser popup blockers do NOT trigger.
+ * Primary Google Sign-In Trigger (Firebase Auth Popup)
+ * Uses Firebase's registered authDomain handler so dynamic preview origins do NOT
+ * fail with Google OAuth "Error 400: origin_mismatch".
+ * Called synchronously in click handler to satisfy popup blockers.
  */
 export function triggerGoogleSignIn(
   onSuccess: (user: AppUser, token: string) => void,
-  onError: (err: Error) => void
+  onError: (err: AuthTriggerError) => void
 ) {
-  // Update callbacks on existing token client
-  initGISTokenClient(
-    (token, user) => onSuccess(user, token),
-    (err) => onError(err)
-  );
+  isSigningIn = true;
 
-  if (tokenClientInstance) {
-    try {
-      // SYNCHRONOUS CALL: Opens popup immediately in user gesture stack
-      tokenClientInstance.requestAccessToken({
-        prompt: '',
-        hint: 'utilityandservicechargecoordin@gmail.com',
-      });
-      return;
-    } catch (e) {
-      console.warn('GIS sync request failed, trying Firebase fallback:', e);
-    }
-  }
-
-  // Fallback: Synchronous Firebase Popup
   signInWithPopup(auth, provider)
     .then(async (result) => {
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (!credential?.accessToken) {
-        throw new Error('Failed to obtain Google Sheets access token');
+        throw createAuthError(
+          'Google sign-in completed, but no Google Sheets access token was returned. Please grant Spreadsheet permissions and try again.',
+          'auth/missing-access-token'
+        );
       }
 
       cachedAccessToken = credential.accessToken;
@@ -328,24 +338,95 @@ export function triggerGoogleSignIn(
         photoURL: result.user.photoURL,
       };
       cachedAppUser = appUser;
-      notifyAuthListeners(appUser, cachedAccessToken);
+      notifyAuthListeners(appUser, cachedAccessToken, 3600);
       onSuccess(appUser, cachedAccessToken);
     })
     .catch((error: any) => {
       console.error('Firebase Google Sign-In Error:', error);
-      if (
-        error.code === 'auth/popup-closed-by-user' ||
-        error.code === 'auth/popup-blocked'
+      const code: string | undefined = error?.code;
+
+      if (code === 'auth/unauthorized-domain') {
+        const hostname =
+          typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+        onError(
+          createAuthError(
+            `This domain (${hostname}) is not authorized in Firebase Authentication yet. Add "${hostname}" to Firebase Authorized Domains, use Direct GCP OAuth if this origin is registered in Cloud Console, or paste an Access Token below.`,
+            code
+          )
+        );
+      } else if (
+        code === 'auth/popup-closed-by-user' ||
+        code === 'auth/popup-blocked'
       ) {
         onError(
-          new Error(
-            'The sign-in popup was blocked or closed. Please click "Open App in Full Browser Tab to Sign In" below to connect smoothly.'
+          createAuthError(
+            'The sign-in popup was blocked or closed. Open the app in a full browser tab or allow popups to complete sign-in.',
+            code
+          )
+        );
+      } else if (code === 'auth/cancelled-popup-request') {
+        onError(
+          createAuthError(
+            'Another sign-in window is already open. Please finish or close it and try again.',
+            code
           )
         );
       } else {
-        onError(error);
+        onError(
+          createAuthError(
+            error?.message || 'Failed to authenticate with Google.',
+            code
+          )
+        );
       }
+    })
+    .finally(() => {
+      isSigningIn = false;
     });
+}
+
+/**
+ * Optional Direct Google Identity Services (GIS) Sign-In
+ * Useful when the current origin is registered in GCP OAuth Client Authorized JavaScript origins.
+ */
+export function triggerGISSignIn(
+  onSuccess: (user: AppUser, token: string) => void,
+  onError: (err: AuthTriggerError) => void
+) {
+  initGISTokenClient(
+    (token, user) => onSuccess(user, token),
+    (err) =>
+      onError(
+        createAuthError(
+          err?.message || 'Google Identity Services popup failed.',
+          'gis/error'
+        )
+      )
+  );
+
+  if (tokenClientInstance) {
+    try {
+      tokenClientInstance.requestAccessToken({
+        prompt: 'select_account',
+      });
+      return;
+    } catch (e: any) {
+      onError(
+        createAuthError(
+          e?.message || 'Failed to launch Google Identity Services popup.',
+          'gis/launch-failed'
+        )
+      );
+      return;
+    }
+  }
+
+  onError(
+    createAuthError(
+      'Google Identity Services script is still loading or blocked. Please wait a moment and try again.',
+      'gis/not-ready'
+    )
+  );
 }
 
 /**
@@ -356,7 +437,7 @@ export async function setManualAccessToken(token: string): Promise<AppUser> {
   if (!clean) throw new Error('Token cannot be empty');
 
   // Verify token by fetching user profile
-  const user = await fetchGoogleUserProfile(clean);
+  const user = await fetchGoogleUserProfile(clean, true);
   cachedAccessToken = clean;
   cachedAppUser = user;
   notifyAuthListeners(user, clean);
